@@ -1,0 +1,1588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>π 实验室 · 蒙特卡洛估算</title>
+    <meta name="description" content="通过动态随机采样、收敛曲线和重复实验，直观探索蒙特卡洛方法如何估算圆周率。">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230f1d35'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='42' font-family='serif' fill='%2367c7ff'%3E%CF%80%3C/text%3E%3C/svg%3E">
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #14213b;
+            --muted: #75839d;
+            --blue: #2d7ff9;
+            --cyan: #57c7f3;
+            --red: #ff716b;
+            --line: #e4eaf3;
+            --surface: #ffffff;
+            --page: #f2f6fb;
+            --shadow: 0 18px 48px rgba(26, 52, 92, .08);
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(ellipse at 12% 2%, rgba(77, 164, 255, .12), transparent 34rem),
+                radial-gradient(ellipse at 90% 30%, rgba(91, 214, 222, .08), transparent 30rem),
+                var(--page);
+            color: var(--ink);
+            font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+            font-size: 16px;
+            line-height: 1.55;
+        }
+        button, input, select { font: inherit; }
+        button { cursor: pointer; }
+        .font-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+        .container {
+            width: min(1480px, calc(100% - 48px));
+            max-width: none;
+            margin: 0 auto;
+            padding: 26px 0 42px;
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(360px, .82fr);
+            grid-template-areas:
+                "header header"
+                "simulation metrics"
+                "simulation controls"
+                "convergence convergence"
+                "repeat repeat"
+                "footer footer";
+            align-items: start;
+            gap: 18px;
+        }
+        #offlineNotice { grid-area: notice; }
+        #mainHeader { grid-area: header; display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 2px 3px 3px; text-align: left; }
+        #mainHeader h1 { margin: 0; color: #12213b; font-size: clamp(1.8rem, 3.1vw, 2.65rem); line-height: 1.12; letter-spacing: -.055em; font-weight: 800; }
+        #mainHeader p { margin: 9px 0 0; max-width: 680px; color: #687792; font-size: 1rem; }
+        #mainHeader h1::after { content: ""; display: inline-block; width: 8px; height: 8px; margin: 0 0 5px 9px; border-radius: 50%; background: #52c4f5; box-shadow: 0 0 0 5px rgba(82,196,245,.12); }
+        #workspaceGrid { display: contents; }
+        #simulationPanel { grid-area: simulation; min-width: 0; }
+        #controlsPanel { grid-area: controls; min-width: 0; display: grid; align-content: start; gap: 16px; }
+        #metricsCard { grid-area: metrics; min-width: 0; margin: 0; }
+        #convergenceCard { grid-area: convergence; margin: 0; }
+        #repeatCard { grid-area: repeat; margin: 0; }
+        #simulationPanel > .bg-white, #controlsPanel > .bg-white, #controlsPanel > details,
+        #metricsCard, #convergenceCard, #repeatCard {
+            border: 1px solid rgba(218, 227, 240, .95);
+            border-radius: 22px;
+            background: rgba(255,255,255,.96);
+            box-shadow: var(--shadow);
+        }
+        #simulationPanel > .bg-white { padding: 18px; }
+        #simulationPanel h2, #controlsPanel h2, #convergenceCard h2, #repeatCard h2 { margin: 0; color: #20324f; font-size: 1.05rem; font-weight: 750; letter-spacing: -.015em; }
+        #simulationPanel > .bg-white > h2 { display: flex; align-items: center; justify-content: space-between; margin: 0 3px 14px; }
+        #simulationPanel > .bg-white > h2::after { content: "随机落点 · 实时绘制"; padding: 5px 10px; border-radius: 999px; background: #eef5ff; color: #3c76c7; font-size: .75rem; font-weight: 650; letter-spacing: 0; }
+        #simulationPanel .relative.flex-1 { position: relative; display: flex; flex: 1; align-items: center; justify-content: center; overflow: hidden; min-height: min(62vw, 680px); border: 1px solid #293858; border-radius: 18px; background: #101b31; }
+        #simulationPanel .relative.mx-auto.h-full { position: relative; width: min(100%, 680px); height: auto; aspect-ratio: 1; margin: 0 auto; }
+        #simulationPanel #simulationCanvas { display: block; width: 100%; height: 100%; }
+        #simulationPanel .pointer-events-none { position: absolute; inset: 0; pointer-events: none; }
+        #simulationPanel .pointer-events-none > div:first-child { position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: rgba(172,194,224,.22); }
+        #simulationPanel .pointer-events-none > div:nth-child(2) { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(172,194,224,.22); }
+        #simulationPanel .pointer-events-none > div:nth-child(3) { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); }
+        #simulationPanel .pointer-events-none > div:nth-child(4) { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); }
+        #progressTip { position: absolute; z-index: 2; top: 12px; right: 12px; align-items: center; padding: 5px 10px; border: 1px solid rgba(255,255,255,.13); border-radius: 999px; background: rgba(21,37,64,.88); color: #c0d3f2; font-size: .76rem; }
+        #progressWrap { position: absolute; z-index: 2; right: 0; bottom: 0; left: 0; height: 5px; background: rgba(255,255,255,.12); }
+        #progressBar { height: 100%; background: linear-gradient(90deg,#4ca8ff,#65d2ed); transition: width .12s linear; }
+        #simulationPanel .flex.flex-wrap.items-center.justify-between { display: flex; flex-wrap: wrap; justify-content: space-between; }
+        #simulationPanel .flex.flex-wrap.items-center { display: flex; flex-wrap: wrap; align-items: center; }
+        #simulationPanel .flex.flex-wrap.items-center.gap-2 { display: flex; flex-wrap: wrap; gap: 8px; }
+        #simulationPanel .pointer-events-none .text-gray-500 { color: #8fa1be; }
+        #simulationPanel .pointer-events-none .bg-gray-300\/50 { background-color: rgba(172,194,224,.22); }
+        #simulationPanel > .bg-white > .flex.flex-wrap { border-color: #e8edf5; }
+        #simulationPanel .bg-primary.rounded-full { background: #4ca8ff; }
+        #simulationPanel .bg-secondary.rounded-full { background: #ff716b; }
+        #simulationPanel .flex.items-center > .w-4.h-4 { width: 12px; height: 12px; margin-right: 8px; border-radius: 50%; }
+        #simulationPanel .flex.items-center > .border { width: 12px; height: 12px; margin-right: 8px; border: 1px solid #8b9cb5; }
+        #simulationPanel button, #repeatCard button { padding: 8px 11px; border: 1px solid #e1e8f2; border-radius: 10px; background: #f7f9fc; color: #52637c; font-size: .78rem; font-weight: 650; transition: background .18s, border-color .18s; }
+        #simulationPanel button:hover, #repeatCard button:hover { border-color: #cbdcf2; background: #eef4fc; }
+        #metricsCard { padding: 18px; }
+        #metricsCard > .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        #metricsCard > .grid > div { min-width: 0; padding: 12px 13px; border: 1px solid #e9eef5; border-radius: 15px; background: #f8fafd; text-align: left; }
+        #metricsCard > .grid > div:nth-child(3) { grid-column: span 2; padding: 15px 17px; border-color: #d7e9ff; background: linear-gradient(120deg,#eff7ff,#f5fbff); }
+        #metricsCard > .grid > div:nth-child(3) #currentPi { margin-top: 1px; color: #1769d2; font-size: clamp(1.8rem, 3vw, 2.5rem); line-height: 1.2; font-weight: 750; }
+        #metricsCard > .grid > div > div:first-child { color: #78869e; font-size: .79rem; line-height: 1.35; }
+        #metricsCard .font-mono { color: #233958; font-variant-numeric: tabular-nums; }
+        #metricsCard > .grid > div:nth-child(3) > div:first-child { color: #50729f; }
+        #precisionGuide { margin-top: 14px; padding: 14px; border: 1px solid #e3eaf4; border-radius: 16px; background: #f9fbfe; }
+        #precisionGuide h3 { margin: 0 0 8px; color: #304464; font-size: .88rem; font-weight: 750; }
+        #precisionGuide .precision-row { display: flex; gap: 9px; align-items: center; }
+        #precisionGoal { min-width: 0; flex: 1; }
+        #requiredSamples { margin-top: 8px; color: #526580; font-size: .82rem; }
+        #precisionNote { margin-top: 3px; color: #8793a7; font-size: .73rem; }
+        #applyPrecision { flex: 0 0 auto; padding: 8px 11px; border: 0; border-radius: 10px; background: #e5efff; color: #2067c2; font-size: .78rem; font-weight: 700; transition: .2s; }
+        #applyPrecision:hover { background: #d7e7ff; }
+        #precisionStatus { margin-top: 8px; color: #6e8099; font-size: .78rem; }
+        .precision-meter { height: 5px; margin-top: 7px; overflow: hidden; border-radius: 99px; background: #e6edf6; }
+        #precisionMeterBar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#52b9fa,#3978ef); transition: width .2s; }
+        #controlsPanel > .bg-white { padding: 19px; }
+        #controlsPanel .space-y-4 > * + * { margin-top: 16px; }
+        #controlsPanel h2 { margin-bottom: 13px; }
+        #controlsPanel .grid.grid-cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        #controlsPanel .flex.items-center { display: flex; align-items: center; }
+        #controlsPanel .flex.items-start { display: flex; align-items: flex-start; }
+        #controlsPanel label { color: #52627b; font-size: .88rem; font-weight: 650; }
+        #controlsPanel input[type=number], #controlsPanel select, #precisionGoal {
+            min-height: 42px; padding: 9px 11px; border: 1px solid #dfe6f0; border-radius: 11px;
+            background: #fbfcfe; color: #263954; outline: none; transition: border-color .18s, box-shadow .18s;
+        }
+        #controlsPanel input:focus, #controlsPanel select:focus, #precisionGoal:focus { border-color: #71aaf6; box-shadow: 0 0 0 3px rgba(45,127,249,.12); }
+        #totalPoints { border-radius: 11px 0 0 11px !important; }
+        #applyTotal { min-height: 42px; padding: 0 15px; border: 0; border-radius: 0 11px 11px 0; background: #e7f0ff; color: #1c67c8; font-weight: 700; }
+        #startBtn, #resetBtn { min-height: 45px; border-radius: 12px; font-size: .93rem; font-weight: 750; transition: transform .18s, box-shadow .18s, background .18s; }
+        #startBtn { border: 0; background: #287cf0; color: white; box-shadow: 0 8px 18px rgba(40,124,240,.2); }
+        #startBtn:hover { background: #1c6bdd; box-shadow: 0 10px 22px rgba(40,124,240,.28); transform: translateY(-1px); }
+        #startBtn[data-state="running"] { background: #0f9e83; }
+        #resetBtn { border: 1px solid #e0e7f0; background: #fff; color: #586980; }
+        #resetBtn:hover { background: #f4f7fb; }
+        #controlsPanel .text-xs { font-size: .78rem; line-height: 1.5; }
+        #controlsPanel .border-t { border-color: #e8edf4; }
+        #controlsPanel details { overflow: hidden; }
+        #controlsPanel details summary { padding: 16px 18px; color: #304464; font-size: .96rem; font-weight: 700; }
+        #controlsPanel details summary::marker { color: #4289ef; }
+        #controlsPanel details > div { padding: 0 18px 18px; color: #596a83; font-size: .88rem; line-height: 1.65; }
+        #controlsPanel details > div > p { margin: 9px 0; }
+        #convergenceCard, #repeatCard { padding: 18px 20px; }
+        #convergenceCard canvas, #repeatCard canvas { display: block; width: 100%; height: 180px; }
+        #repeatCard canvas { height: 200px; }
+        #convergenceCard .flex.flex-wrap.items-center.justify-between, #repeatCard .flex.flex-wrap.items-center.justify-between { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+        #convergenceCard .flex.flex-wrap.items-center { display: flex; flex-wrap: wrap; align-items: center; }
+        #repeatCard .flex.flex-wrap.items-end { display: flex; flex-wrap: wrap; align-items: end; }
+        #repeatCard .grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
+        #repeatCard input { width: 100px; padding: 7px 9px; }
+        #repeatCard #repeatK { width: 84px; }
+        #convergenceCard h2, #repeatCard h2 { margin: 0; }
+        #convergenceCard > p, #repeatCard > p { color: #66758d; font-size: .87rem; }
+        #repeatCard > .grid > div { border: 1px solid #e9eef5; border-radius: 12px; background: #f8fafd; }
+        #repeatCard input { min-height: 38px; border: 1px solid #dfe6f0; border-radius: 9px; }
+        #repeatBtn { border: 0; border-radius: 10px; background: #287cf0; color: white; font-weight: 700; }
+        #exportRepeatBtn, #simulationPanel button:not(#startBtn), #controlsPanel button:not(#startBtn):not(#resetBtn):not(#applyTotal) { border-radius: 9px; }
+        #convergenceCanvas { height: 190px; }
+        footer { grid-area: footer; margin: 0 !important; color: #8491a6; font-size: .82rem; }
+        footer p { margin: 2px 0; }
+        #toast { background: #172844; box-shadow: 0 12px 32px rgba(9,24,48,.22); }
+        i.fa { display: none; }
+        .hidden { display: none !important; }
+        .flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .flex-1 { flex: 1; }
+        .grid { display: grid; }
+        .relative { position: relative; }
+        .absolute { position: absolute; }
+        .block { display: block; }
+        .w-full { width: 100%; }
+        .h-full { height: 100%; }
+        .max-w-full { max-width: 100%; }
+        .overflow-hidden { overflow: hidden; }
+        .min-h-0 { min-height: 0; }
+        .flex-wrap { flex-wrap: wrap; }
+        .items-center { align-items: center; }
+        .items-start { align-items: flex-start; }
+        .items-end { align-items: end; }
+        .justify-between { justify-content: space-between; }
+        .justify-center { justify-content: center; }
+        .gap-2 { gap: 8px; }
+        .gap-3 { gap: 12px; }
+        .gap-x-4 { column-gap: 16px; }
+        .gap-x-5 { column-gap: 20px; }
+        .gap-y-1 { row-gap: 4px; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .opacity-0 { opacity: 0; }
+        .opacity-100 { opacity: 1; }
+        @media (max-width: 980px) {
+            .container { width: min(calc(100% - 32px), 760px); grid-template-columns: minmax(0,1fr); grid-template-areas: "header" "simulation" "metrics" "controls" "convergence" "repeat" "footer"; gap: 15px; padding-top: 20px; }
+            #simulationPanel .relative.flex-1 { min-height: min(88vw, 680px); }
+            #controlsPanel { display: grid; grid-template-columns: 1fr; }
+        }
+        @media (max-width: 560px) {
+            .container { width: calc(100% - 22px); gap: 12px; padding-top: 16px; }
+            #mainHeader { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+            #mainHeader h1 { font-size: 1.7rem; }
+            #mainHeader p { max-width: 100%; margin: 0; font-size: .9rem; }
+            #simulationPanel > .bg-white, #controlsPanel > .bg-white, #metricsCard, #convergenceCard, #repeatCard { padding: 14px; border-radius: 17px; }
+            #simulationPanel, #simulationPanel > .bg-white { width: 100%; min-width: 0; overflow: hidden; }
+            #simulationPanel > .bg-white > h2 { margin: 0 1px 10px; font-size: .96rem; }
+            #simulationPanel > .bg-white > h2::after { font-size: .66rem; }
+            #simulationPanel .relative.flex-1 { width: 100%; height: auto; min-height: 0; aspect-ratio: 1; }
+            #simulationPanel .relative.mx-auto.h-full { width: 100%; height: 100%; max-width: 100%; aspect-ratio: auto; }
+            #metricsCard > .grid > div { padding: 10px; }
+            #metricsCard > .grid > div:nth-child(3) #currentPi { font-size: 2rem; }
+            #precisionGuide { padding: 12px; }
+            #convergenceCard h2, #repeatCard h2 { font-size: .95rem; }
+            #convergenceCard .flex.flex-wrap.items-center.justify-between { align-items: start; }
+            #simulationPanel > .bg-white > .flex.flex-wrap { align-items: start; }
+            #simulationPanel > .bg-white > .flex.flex-wrap > div:last-child { width: 100%; }
+            #repeatCard > .flex.flex-wrap { align-items: start; }
+            #repeatCard > .flex.flex-wrap.items-center.justify-between > div:nth-child(2) { width: 100%; }
+            #repeatCard > .flex.flex-wrap > div:nth-child(2) input { width: 100%; }
+        }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen font-sans text-neutral">
+    <div class="container mx-auto px-4 py-5 max-w-6xl">
+        <!-- 标题区域 -->
+        <header id="mainHeader" class="text-center mb-4">
+            <h1 class="text-[clamp(1.75rem,4vw,2.25rem)] font-bold text-neutral mb-1 bg-clip-text text-transparent bg-gradient-to-r from-primary to-indigo-600">
+                蒙特卡洛方法估算圆周率π
+            </h1>
+            <p class="text-gray-600 max-w-2xl mx-auto text-sm">
+                通过随机抛洒谷粒到正方形及其内切圆中，基于落点比例估算圆周率的值
+            </p>
+        </header>
+        
+        <!-- 收敛过程：置于页面最上方，便于仿真过程中实时观察 π 估计值的动态收敛 -->
+        <div id="convergenceCard" class="mb-5 bg-white rounded-xl shadow-soft p-4 md:p-5 transition-all-300 hover:shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <h2 class="text-lg font-semibold flex items-center">
+                    <i class="fa fa-line-chart text-primary mr-2"></i> 收敛过程：π 估计值随 n 的变化
+                </h2>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                    <span class="flex items-center"><span class="inline-block w-4 h-0.5 bg-primary mr-1.5"></span>π̂ = 4m/n</span>
+                    <span class="flex items-center"><span class="inline-block w-3 h-3 bg-primary/20 mr-1.5"></span>±1σ 置信带</span>
+                    <span class="flex items-center"><span class="inline-block w-4 h-0 border-t-2 border-dashed border-emerald-500 mr-1.5"></span>π 真值</span>
+                </div>
+            </div>
+            <div class="relative w-full" style="height:180px">
+                <canvas id="convergenceCanvas" class="w-full h-full block" role="img"
+                        aria-label="π 估计值随样本量 n 变化的收敛曲线，含正负 1 倍标准差的置信带与 π 真值基准线"></canvas>
+            </div>
+            <p class="mt-2 text-sm text-gray-700">
+                阴影带随 n 按 1/√n 收窄：<strong>精度每提高 10 倍，所需样本量约增加 100 倍</strong>——这是蒙特卡洛方法的核心代价（完整推导见下方「原理说明」）。
+            </p>
+        </div>
+        
+        <!-- 实时结果读数条：原左列 8 行竖排压缩为一行网格，字号保持投影可读 -->
+        <div id="metricsCard" class="mb-5 bg-white rounded-xl shadow-soft p-4 md:p-5 transition-all-300 hover:shadow-lg">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div class="p-2.5 bg-gray-50 rounded-lg text-center">
+                    <div class="text-xs text-gray-500">已抛洒谷粒数 (n)</div>
+                    <div id="currentN" class="font-mono font-medium text-lg">0</div>
+                </div>
+                <div class="p-2.5 bg-gray-50 rounded-lg text-center">
+                    <div class="text-xs text-gray-500">圆内谷粒数 (m)</div>
+                    <div id="currentM" class="font-mono font-medium text-lg">0</div>
+                </div>
+                <div class="p-2.5 bg-blue-50 rounded-lg border border-blue-100 text-center">
+                    <div class="text-xs text-gray-500">π 估算值 <span class="text-gray-400">4m/n</span></div>
+                    <div id="currentPi" class="font-mono font-medium text-lg text-primary">0.0000</div>
+                    <div class="text-xs text-gray-500 mt-0.5">理论值 <span class="font-mono">3.1416</span></div>
+                </div>
+                <div id="piByMRow" class="p-2.5 bg-amber-50 rounded-lg border border-amber-100 text-center hidden">
+                    <div class="text-xs text-gray-500">教材公式 <span class="text-gray-400">4m/M</span></div>
+                    <div id="currentPiByM" class="font-mono font-medium text-lg text-amber-600">0.0000</div>
+                </div>
+                <div class="p-2.5 bg-gray-50 rounded-lg text-center">
+                    <div class="text-xs text-gray-500">绝对误差 |π̂−π|</div>
+                    <div id="absError" class="font-mono font-medium text-lg">—</div>
+                    <div class="text-xs text-gray-500 mt-0.5">相对 <span id="relError" class="font-mono">—</span></div>
+                </div>
+                <div class="p-2.5 bg-gray-50 rounded-lg text-center">
+                    <div class="text-xs text-gray-500">理论标准误 σ <span class="text-gray-400">1.642/√n</span></div>
+                    <div id="stdError" class="font-mono font-medium text-lg">—</div>
+                    <div class="text-xs text-gray-500 mt-0.5">95% CI <span id="ci95" class="font-mono">—</span></div>
+                </div>
+            </div>
+            <section id="precisionGuide" aria-labelledby="precisionTitle">
+                <h3 id="precisionTitle">精度目标 · 95% 近似范围</h3>
+                <div class="precision-row">
+                    <label class="sr-only" for="precisionGoal">设定 π 估算的目标误差</label>
+                    <select id="precisionGoal" aria-label="设定目标误差">
+                        <option value="0.05">约 ±0.05</option>
+                        <option value="0.02" selected>约 ±0.02</option>
+                        <option value="0.015">约 ±0.015</option>
+                        <option value="0.01">约 ±0.01</option>
+                    </select>
+                    <button id="applyPrecision" type="button">设为总次数</button>
+                </div>
+                <div id="requiredSamples">理论约需 25,000 次抛洒</div>
+                <div id="precisionNote">依据 1.96σ 估算；随机实验不保证每次都落在该误差内。</div>
+                <div class="precision-meter" aria-hidden="true"><div id="precisionMeterBar"></div></div>
+                <div id="precisionStatus">完成模拟后查看本次样本量对应的理论误差范围。</div>
+            </section>
+        </div>
+        
+        <div id="workspaceGrid" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <!-- 控制面板 -->
+            <div id="controlsPanel" class="lg:col-span-1 space-y-4">
+                <div class="bg-white rounded-xl shadow-soft p-5 transition-all-300 hover:shadow-lg">
+                    <h2 class="text-lg font-semibold mb-3 flex items-center">
+                        <i class="fa fa-sliders text-primary mr-2"></i> 模拟控制
+                    </h2>
+                    
+                    <div class="space-y-4">
+                        <!-- 总执行次数设置 -->
+                        <div>
+                            <label for="totalPoints" class="block text-sm font-medium text-gray-700 mb-1">
+                                总执行次数 M（10–100,000）
+                            </label>
+                            <div class="flex items-center">
+                                <input 
+                                    type="number" 
+                                    id="totalPoints" 
+                                    min="10" 
+                                    max="100000" 
+                                    value="1000"
+                                    class="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                                >
+                                <button id="applyTotal" class="bg-primary text-white px-4 py-2 rounded-r-lg hover:bg-primary/90 transition-all-300">
+                                    应用
+                                </button>
+                            </div>
+                            <p class="mt-1 text-xs text-gray-400">应用新的 M 会清空当前点云并从头开始，避免新旧样本混在一起。</p>
+                        </div>
+                        
+                        <!-- 控制按钮 -->
+                        <div class="grid grid-cols-2 gap-3 pt-2">
+                            <button id="startBtn" data-state="ready" aria-label="开始或暂停模拟（快捷键：空格）" class="bg-primary hover:bg-primary/90 text-white font-medium py-3 px-4 rounded-lg transition-all-300 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2">
+                                <i class="fa fa-play mr-2" aria-hidden="true"></i> 开始
+                            </button>
+                            <button id="resetBtn" aria-label="重置模拟（快捷键：R）" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-4 rounded-lg transition-all-300 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2">
+                                <i class="fa fa-refresh mr-2" aria-hidden="true"></i> 重置
+                            </button>
+                        </div>
+                        
+                        <!-- 公式口径切换 -->
+                        <label class="flex items-start space-x-2 pt-1 text-sm text-gray-600 cursor-pointer select-none">
+                            <input type="checkbox" id="piFormulaToggle" class="mt-0.5 h-4 w-4 rounded border-gray-300 accent-primary focus:ring-primary/50">
+                            <span>同时显示教材公式 <span class="font-mono">π = 4m/M</span>
+                                <span class="block text-xs text-gray-400">M 为总执行次数；n &lt; M 时该式会系统性偏小</span>
+                            </span>
+                        </label>
+                        
+                        <!-- 演示速度 -->
+                        <div>
+                            <label for="speedSelect" class="block text-sm font-medium text-gray-700 mb-1">演示速度</label>
+                            <select id="speedSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                                <option value="slow">慢速 (0.25×)</option>
+                                <option value="normal" selected>中速 (1×)</option>
+                                <option value="fast">快速 (4×)</option>
+                                <option value="instant">瞬时完成</option>
+                            </select>
+                            <p class="text-xs text-gray-400 mt-1">每批点数按总次数自适应，中速约 1~2 秒跑完，与 M 无关</p>
+                        </div>
+                        
+                        <!-- 随机数发生器 -->
+                        <div class="pt-3 border-t border-gray-100">
+                            <label for="rngSelect" class="block text-sm font-medium text-gray-700 mb-1">随机数发生器</label>
+                            <select id="rngSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                                <option value="native" selected>Math.random()（内置，不可复现）</option>
+                                <option value="lcg">线性同余法 LCG（可设种子，可复现）</option>
+                            </select>
+                            <p id="rngNote" class="mt-1 text-xs text-gray-400">更换随机数发生器或种子后，点击“重置”再开始即可应用新设置。</p>
+                            
+                            <div id="lcgPanel" class="mt-3 space-y-2 hidden">
+                                <div>
+                                    <label for="lcgPreset" class="block text-xs font-medium text-gray-600 mb-1">参数预设</label>
+                                    <select id="lcgPreset" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                        <option value="minstd" selected>MINSTD a=16807, m=2³¹−1（推荐）</option>
+                                        <option value="randu">RANDU a=65539, m=2³¹（劣质示范）</option>
+                                        <option value="custom">自定义</option>
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label for="lcgA" class="block text-xs text-gray-600">乘数 a</label>
+                                        <input type="number" id="lcgA" value="16807" class="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                    </div>
+                                    <div>
+                                        <label for="lcgC" class="block text-xs text-gray-600">增量 c</label>
+                                        <input type="number" id="lcgC" value="0" class="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                    </div>
+                                    <div>
+                                        <label for="lcgM" class="block text-xs text-gray-600">模数 m</label>
+                                        <input type="number" id="lcgM" value="2147483647" class="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                    </div>
+                                    <div>
+                                        <label for="lcgSeed" class="block text-xs text-gray-600">种子 X₀</label>
+                                        <input type="number" id="lcgSeed" value="1" class="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                </div>
+                        </div>
+                                <p class="text-xs text-gray-400">
+                                    递推式 x<sub>n+1</sub> = (a·x<sub>n</sub> + c) mod m。相同种子可完整复现实验结果；
+                                    a·m 超过 2⁵³ 时自动改用 BigInt 运算，结果精确但略慢。
+                                </p>
+                                <p id="randuHint" class="text-xs text-amber-600 hidden">
+                                    RANDU 是著名的劣质发生器，其高维相关性极差，散点会呈现明显条纹、π 估计也常出现系统性偏差——正可用于说明「随机数质量决定仿真可信度」。
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 说明：默认折叠，点击标题展开（收起态不占纵向空间） -->
+                <details class="bg-white rounded-xl shadow-soft transition-all-300 hover:shadow-lg">
+                    <summary class="cursor-pointer select-none list-none p-5 flex items-center justify-between text-lg font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+                        <span class="flex items-center">
+                            <i class="fa fa-info-circle text-primary mr-2"></i> 原理说明
+                        </span>
+                        <span class="flex items-center text-xs font-normal text-gray-400">
+                            点击展开 / 收起 <i class="fa fa-chevron-down ml-1.5 text-gray-300"></i>
+                        </span>
+                    </summary>
+                    
+                    <div class="text-gray-600 text-sm space-y-2 px-5 pb-5">
+                        <p>在边长为2的正方形内有一半径为1的内切圆，两者面积之比为：</p>
+                        <p class="bg-gray-50 p-2 rounded text-center">
+                            S<sub>圆</sub> / S<sub>正方形</sub> = π·1² / 2² = π / 4
+                        </p>
+                        <p>向正方形内随机抛洒谷粒，落在圆内的频率 m/n 依大数定律收敛于 π/4：</p>
+                        <p class="bg-blue-50 p-2 rounded text-center text-primary">
+                            π ≈ 4 × m / n
+                        </p>
+                        <p class="text-xs text-gray-500">
+                            注：教材步骤5写作 <span class="font-mono">π = 4m/M</span>（M 为总执行次数）。模拟结束时 n = M，两式结果相同；但过程中 n &lt; M，该式会系统性偏小。可勾选左侧开关对比观察。
+                        </p>
+                        <p>模拟次数越多，估算值越接近真实π值。</p>
+                        
+                        <div class="pt-2 mt-2 border-t border-gray-100">
+                            <p class="font-medium text-neutral">精度从何而来</p>
+                            <p>记第 i 粒谷粒是否落入圆内为指示变量 I<sub>i</sub>，则 P(I<sub>i</sub>=1)=p=π/4，且 m=ΣI<sub>i</sub> 服从二项分布 B(n, p)。于是：</p>
+                            <p class="bg-gray-50 p-2 rounded text-center">
+                                E(π̂) = 4·E(m)/n = 4p = π　（无偏）
+                            </p>
+                            <p class="bg-gray-50 p-2 rounded text-center">
+                                Var(π̂) = 16·p(1−p)/n　⟹　σ = 4·√[p(1−p)/n] ≈ <span class="text-primary">1.642/√n</span>
+                            </p>
+                            <p>由中心极限定理，π̂ 近似服从 N(π, σ²)，误差阶为 <span class="font-mono">O(1/√n)</span>：样本量增大 100 倍，精度才提高 10 倍。这就是蒙特卡洛方法的主要代价，也是必须用<strong>方差缩减技术</strong>或<strong>重复实验取平均</strong>的原因。</p>
+                        </div>
+                    </div>
+                </details>
+            </div>
+            
+            <!-- 可视化区域 -->
+            <div id="simulationPanel" class="lg:col-span-2">
+                <div class="bg-white rounded-xl shadow-soft p-4 md:p-6 h-full flex flex-col">
+                    <h2 class="text-lg font-semibold mb-3 flex items-center">
+                        <i class="fa fa-area-chart text-primary mr-2"></i> 模拟可视化
+                    </h2>
+                    
+                    <div class="relative flex-1 min-h-0 flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden">
+                        <!-- 进度提示：角落小标签 + 底部细进度条，不再用白幕遮挡画布 -->
+                        <div id="progressTip" class="absolute right-3 top-3 z-10 px-2.5 py-1 rounded-full bg-white/90 shadow text-xs text-gray-500 flex items-center hidden">
+                            <div class="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin mr-1.5"></div>
+                            正在抛洒谷粒 <span id="progressPct" class="font-mono ml-1">0%</span>
+                        </div>
+                        <div id="progressWrap" class="absolute left-0 right-0 bottom-0 h-1.5 bg-gray-200/90 z-10 hidden"
+                             role="progressbar" aria-label="抛洒谷粒进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                            <div id="progressBar" class="h-full bg-primary transition-all duration-150" style="width:0%"></div>
+                        </div>
+                        
+                        <!-- Canvas容器：与画布同为正方形（高度撑满、宽度由 aspect-square 推导），
+                             取消原 max-w-lg 上限，使画布按可用空间放大，消除灰底大片留白 -->
+                        <div class="relative mx-auto h-full aspect-square max-w-full">
+                            <canvas id="simulationCanvas" class="w-full h-full block" role="img"
+                                    aria-label="正方形与内切圆散点图：蓝点表示落在圆内的谷粒，红点表示落在圆外的谷粒"></canvas>
+                            
+                            <!-- 中心坐标轴提示（标签内移，避免被 overflow-hidden 裁切） -->
+                            <div class="absolute inset-0 pointer-events-none">
+                                <div class="absolute top-1/2 left-0 right-0 h-px bg-gray-300/50"></div>
+                                <div class="absolute left-1/2 top-0 bottom-0 w-px bg-gray-300/50"></div>
+                                <div class="absolute bottom-1 left-1/2 transform -translate-x-1/2 text-xs text-gray-500">x轴</div>
+                                <div class="absolute top-1/2 right-1 transform -translate-y-1/2 text-xs text-gray-500">y轴</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 图例与数据导出（合并为一行，减少一层纵向堆叠） -->
+                    <div class="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-100">
+                        <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-primary rounded-full mr-2"></div>
+                                <span>圆内的点</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-secondary rounded-full mr-2"></div>
+                                <span>圆外的点</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 border border-gray-400 bg-transparent mr-2"></div>
+                                <span>正方形边界</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                            <button id="exportPointsBtn" class="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-all-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+                                <i class="fa fa-download mr-1" aria-hidden="true"></i> 谷粒坐标 CSV
+                            </button>
+                            <button id="exportConvBtn" class="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-all-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+                                <i class="fa fa-download mr-1" aria-hidden="true"></i> 收敛数据 CSV
+                            </button>
+                            <button id="exportPngBtn" class="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-all-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+                                <i class="fa fa-picture-o mr-1" aria-hidden="true"></i> 散点图 PNG
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 重复独立实验 -->
+        <div id="repeatCard" class="mt-5 bg-white rounded-xl shadow-soft p-4 md:p-5 transition-all-300 hover:shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <h2 class="text-lg font-semibold flex items-center">
+                    <i class="fa fa-bar-chart text-primary mr-2" aria-hidden="true"></i> 重复独立实验：π 估计值的分布
+                </h2>
+                <div class="flex flex-wrap items-end gap-2 text-sm">
+                    <div>
+                        <label for="repeatM" class="block text-xs text-gray-600 mb-1">每组样本量 M</label>
+                        <input type="number" id="repeatM" value="5000" min="100" max="200000"
+                               class="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                    </div>
+                    <div>
+                        <label for="repeatK" class="block text-xs text-gray-600 mb-1">重复组数 K</label>
+                        <input type="number" id="repeatK" value="50" min="5" max="500"
+                               class="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                    </div>
+                    <button id="repeatBtn" class="bg-primary hover:bg-primary/90 text-white font-medium py-1.5 px-4 rounded-lg transition-all-300 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2">
+                        <i class="fa fa-random mr-1.5" aria-hidden="true"></i> 开始实验
+                    </button>
+                    <button id="exportRepeatBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-1.5 px-3 rounded-lg transition-all-300 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2">
+                        <i class="fa fa-download mr-1" aria-hidden="true"></i> 导出 CSV
+                    </button>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3 text-center">
+                <div class="p-1.5 bg-gray-50 rounded-lg">
+                    <div class="text-xs text-gray-500">样本均值</div>
+                    <div id="repMean" class="font-mono font-medium">—</div>
+                </div>
+                <div class="p-1.5 bg-gray-50 rounded-lg">
+                    <div class="text-xs text-gray-500">样本标准差</div>
+                    <div id="repStd" class="font-mono font-medium">—</div>
+                </div>
+                <div class="p-1.5 bg-gray-50 rounded-lg">
+                    <div class="text-xs text-gray-500">理论 σ</div>
+                    <div id="repSigma" class="font-mono font-medium">—</div>
+                </div>
+                <div class="p-1.5 bg-gray-50 rounded-lg">
+                    <div class="text-xs text-gray-500">落入 π±σ 比例</div>
+                    <div id="repCov68" class="font-mono font-medium">—</div>
+                </div>
+                <div class="p-1.5 bg-gray-50 rounded-lg">
+                    <div class="text-xs text-gray-500">极差</div>
+                    <div id="repRange" class="font-mono font-medium">—</div>
+                </div>
+            </div>
+            
+            <div class="relative w-full" style="height:200px">
+                <canvas id="histogramCanvas" class="w-full h-full block" role="img"
+                        aria-label="重复实验中 π 估计值的分布直方图"></canvas>
+            </div>
+            <p class="mt-2 text-sm text-gray-700">
+                每组独立抛洒 M 个谷粒得到 π̂<sub>k</sub>，重复 K 次。由中心极限定理 π̂ 近似服从 N(π, σ²)，约 68% 的结果应落在 π±σ 内。
+                注意：单次实验精度由 σ ≈ 1.642/√M 决定，<strong>对 K 组结果取平均</strong>才能把标准差再压低 √K 倍。
+            </p>
+        </div>
+        
+        <!-- 页脚 -->
+        <footer class="mt-6 text-center text-gray-500 text-sm">
+            <p>π 实验室 · 蒙特卡洛随机采样</p>
+            <p class="mt-1 text-xs text-gray-400">快捷键：空格 = 开始/暂停，R = 重置</p>
+        </footer>
+    </div>
+    
+    <!-- 状态播报（同时作为屏幕阅读器的 aria-live 区域） -->
+    <div id="toast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-neutral/90 text-white text-sm shadow-lg opacity-0 pointer-events-none transition-opacity duration-300"
+         role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <script>
+        // 获取DOM元素
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const totalPointsInput = document.getElementById('totalPoints');
+        const applyTotalBtn = document.getElementById('applyTotal');
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const currentNElement = document.getElementById('currentN');
+        const currentMElement = document.getElementById('currentM');
+        const currentPiElement = document.getElementById('currentPi');
+        const currentPiByMElement = document.getElementById('currentPiByM');
+        const piByMRow = document.getElementById('piByMRow');
+        const piFormulaToggle = document.getElementById('piFormulaToggle');
+        const progressTip = document.getElementById('progressTip');
+        const progressPct = document.getElementById('progressPct');
+        const progressWrap = document.getElementById('progressWrap');
+        const progressBar = document.getElementById('progressBar');
+        const speedSelect = document.getElementById('speedSelect');
+        const absErrorElement = document.getElementById('absError');
+        const relErrorElement = document.getElementById('relError');
+        const stdErrorElement = document.getElementById('stdError');
+        const ci95Element = document.getElementById('ci95');
+        const chartCanvas = document.getElementById('convergenceCanvas');
+        const chartCtx = chartCanvas.getContext('2d');
+        const histCanvas = document.getElementById('histogramCanvas');
+        const histCtx = histCanvas.getContext('2d');
+        const rngSelect = document.getElementById('rngSelect');
+        const lcgPanel = document.getElementById('lcgPanel');
+        const lcgPreset = document.getElementById('lcgPreset');
+        const lcgA = document.getElementById('lcgA');
+        const lcgC = document.getElementById('lcgC');
+        const lcgM = document.getElementById('lcgM');
+        const lcgSeed = document.getElementById('lcgSeed');
+        const randuHint = document.getElementById('randuHint');
+        const repeatMInput = document.getElementById('repeatM');
+        const repeatKInput = document.getElementById('repeatK');
+        const repeatBtn = document.getElementById('repeatBtn');
+        const exportRepeatBtn = document.getElementById('exportRepeatBtn');
+        const repMean = document.getElementById('repMean');
+        const repStd = document.getElementById('repStd');
+        const repSigma = document.getElementById('repSigma');
+        const repCov68 = document.getElementById('repCov68');
+        const repRange = document.getElementById('repRange');
+        const exportPointsBtn = document.getElementById('exportPointsBtn');
+        const exportConvBtn = document.getElementById('exportConvBtn');
+        const exportPngBtn = document.getElementById('exportPngBtn');
+        const toast = document.getElementById('toast');
+        const precisionGoal = document.getElementById('precisionGoal');
+        const requiredSamplesElement = document.getElementById('requiredSamples');
+        const precisionStatusElement = document.getElementById('precisionStatus');
+        const precisionMeterBar = document.getElementById('precisionMeterBar');
+        const applyPrecisionBtn = document.getElementById('applyPrecision');
+        
+        // 模拟参数
+        let totalPoints = 1000; // 默认总点数
+        let currentN = 0; // 当前已生成的点数
+        let currentM = 0; // 当前在圆内的点数
+        let isRunning = false; // 模拟是否正在运行
+        let animationId = null; // 定时器ID
+        let points = []; // 存储所有点的数组
+        let chartSamples = []; // 收敛曲线采样点 [{n, pi}]
+        
+        // 批量处理参数，优化性能
+        const batchDelay = 10; // 每批处理后的延迟(ms)
+        const ANIM_FRAMES = 120; // 中速下的目标动画帧数，batchSize 由总次数反推
+        const SPEED_FACTOR = { slow: 0.25, normal: 1, fast: 4, instant: Infinity }; // 演示速度倍率
+        const CHART_MAX_SAMPLES = 400; // 收敛曲线最大采样点数
+        const FAST_DRAW_THRESHOLD = 5000; // 超过该总点数改用 fillRect 绘制
+        
+        // 理论命中概率 p = π/4，以及 π 估计量的标准差常数 4·√[p(1−p)] ≈ 1.6422
+        const P_IN_CIRCLE = Math.PI / 4;
+        const SIGMA_CONST = 4 * Math.sqrt(P_IN_CIRCLE * (1 - P_IN_CIRCLE));
+        
+        // 理论标准误：σ(n) ≈ 1.642 / √n
+        function theoreticalSigma(n) {
+            return n > 0 ? SIGMA_CONST / Math.sqrt(n) : 0;
+        }
+
+        // 正态近似下，95% 误差半宽 ε 所需的理论样本量
+        function samplesForMargin(epsilon) {
+            return Math.ceil(Math.pow(1.96 * SIGMA_CONST / epsilon, 2));
+        }
+
+        function updatePrecisionGuide() {
+            const epsilon = Number(precisionGoal.value) || 0.02;
+            const required = samplesForMargin(epsilon);
+            requiredSamplesElement.textContent = `理论约需 ${required.toLocaleString()} 次抛洒`;
+            const ratio = Math.min(currentN / required, 1);
+            precisionMeterBar.style.width = `${(ratio * 100).toFixed(1)}%`;
+            if (!currentN) {
+                precisionStatusElement.textContent = '完成模拟后查看本次样本量对应的理论误差范围。';
+                return;
+            }
+            const margin = 1.96 * theoreticalSigma(currentN);
+            if (margin <= epsilon) {
+                precisionStatusElement.textContent = `当前理论 95% 误差约 ±${margin.toFixed(4)}，已达到所选目标。`;
+            } else {
+                precisionStatusElement.textContent = `当前约 ±${margin.toFixed(4)}；按理论估算还需约 ${(required - currentN).toLocaleString()} 次。`;
+            }
+        }
+        
+        // 当前使用的随机数发生器，每次从头开始模拟时按面板设置重建
+        let rng = Math.random;
+        let repeatResults = []; // 重复实验中每组的 π 估计值
+        let lastRepeatM = 5000; // 最近一次重复实验的每组样本量
+        let activeRngInfo = { type: 'Math.random()', seed: null };
+        
+        // 线性同余发生器：x_{n+1} = (a·x_n + c) mod m，输出 [0,1)
+        function createLCG(a, c, m, seed) {
+            let s = ((seed % m) + m) % m;
+            
+            // a·(m−1)+c 超出安全整数范围时改用 BigInt，避免双精度截断导致序列退化
+            const overflow = !Number.isSafeInteger(a * (m - 1) + c);
+            if (overflow && typeof BigInt !== 'undefined') {
+                const ba = BigInt(a), bc = BigInt(c), bm = BigInt(m);
+                let bx = BigInt(s);
+                return function () {
+                    bx = (ba * bx + bc) % bm;
+                    return Number(bx) / m;
+                };
+            }
+            return function () {
+                s = (a * s + c) % m;
+                return s / m;
+            };
+        }
+        
+        // 按面板设置创建随机数发生器
+        function createRng(captureForMainRun = true) {
+            if (rngSelect.value === 'lcg') {
+                const safeInt = (input, fallback) => {
+                    const value = Number(input.value);
+                    return Number.isFinite(value) ? Math.max(-Number.MAX_SAFE_INTEGER, Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(value))) : fallback;
+                };
+                const a = Math.max(2, safeInt(lcgA, 16807));
+                const m = Math.max(2, safeInt(lcgM, 2147483647));
+                const normalize = value => { const mod = value % m; return mod < 0 ? mod + m : mod; };
+                const c = normalize(safeInt(lcgC, 0));
+                const seed = normalize(safeInt(lcgSeed, 1));
+                if (captureForMainRun) activeRngInfo = { type: 'LCG', preset: lcgPreset.value, a, c, m, seed };
+                return createLCG(a, c, m, seed);
+            }
+            if (captureForMainRun) activeRngInfo = { type: 'Math.random()', seed: null };
+            return Math.random;
+        }
+        
+        // 状态播报：同时作为屏幕阅读器的 aria-live 提示
+        let toastTimer = null;
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.remove('opacity-0');
+            toast.classList.add('opacity-100');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 2600);
+        }
+        
+        // 触发浏览器下载
+        function downloadFile(filename, content, mime) {
+            const blob = new Blob([content], { type: (mime || 'text/plain') + ';charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }
+        
+        // 每批点数按总次数自适应，使动画帧数基本恒定（与 M 无关）
+        function computeBatchSize() {
+            const factor = SPEED_FACTOR[speedSelect.value] || 1;
+            if (factor === Infinity) return Infinity;
+            const base = Math.min(Math.max(Math.ceil(totalPoints / ANIM_FRAMES), 1), 20000);
+            return Math.max(1, Math.round(base * factor));
+        }
+        
+        // Canvas 最小边长(px)：避免首次布局或极窄容器尺寸导致不可见画布
+        const MIN_CANVAS_SIZE = 200;
+        let lastCanvasSize = 0; // 上一次应用的画布边长(px)
+        let lastDpr = window.devicePixelRatio || 1; // 上一次应用的设备像素比
+        let lastChartW = 0; // 上一次应用的收敛曲线画布宽度(px)
+        let lastChartH = 0; // 上一次应用的收敛曲线画布高度(px)
+        let lastHistW = 0; // 上一次应用的直方图画布宽度(px)
+        let lastHistH = 0; // 上一次应用的直方图画布高度(px)
+        
+        // 计算并应用Canvas尺寸，返回实际边长(px)
+        function applyCanvasSize() {
+            const container = canvas.parentElement;
+            const size = Math.max(Math.min(container.clientWidth, container.clientHeight), MIN_CANVAS_SIZE);
+            const dpr = window.devicePixelRatio || 1;
+            
+            canvas.width = Math.round(size * dpr);
+            canvas.height = Math.round(size * dpr);
+            canvas.style.width = `${size}px`;
+            canvas.style.height = `${size}px`;
+            
+            lastCanvasSize = size;
+            lastDpr = dpr;
+            return size;
+        }
+        
+        // 初始化Canvas
+        function initCanvas() {
+            // 设置Canvas尺寸，确保高清显示
+            applyCanvasSize();
+            
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制正方形和圆
+            drawSquareAndCircle();
+        }
+        
+        // 重设尺寸并完整重绘：正方形 + 内切圆 + 已生成的全部谷粒
+        function redrawAll() {
+            applyCanvasSize();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawSquareAndCircle();
+            drawPoints(points);
+        }
+        
+        // 初始化收敛曲线Canvas（只设置绘图缓冲区尺寸，显示尺寸由 CSS 的 w-full h-full 决定）
+        function initChart() {
+            const w = Math.max(chartCanvas.clientWidth, 280);
+            const h = Math.max(chartCanvas.clientHeight, 160);
+            const dpr = window.devicePixelRatio || 1;
+            
+            chartCanvas.width = Math.round(w * dpr);
+            chartCanvas.height = Math.round(h * dpr);
+            lastChartW = w;
+            lastChartH = h;
+            
+            drawChart();
+        }
+        
+        // 绘制收敛曲线：π̂ 随 n 的变化 + ±1σ 置信带 + π 真值基准线
+        function drawChart() {
+            const W = chartCanvas.width;
+            const H = chartCanvas.height;
+            const dpr = window.devicePixelRatio || 1;
+            
+            chartCtx.setTransform(1, 0, 0, 1, 0, 0);
+            chartCtx.clearRect(0, 0, W, H);
+            
+            const padL = 52 * dpr, padR = 16 * dpr, padT = 12 * dpr, padB = 26 * dpr;
+            const pw = W - padL - padR;
+            const ph = H - padT - padB;
+            if (pw <= 0 || ph <= 0) return;
+            
+            // 纵轴范围：覆盖全部样本的 ±2σ，并至少包含 π±0.08
+            let lo = Math.PI, hi = Math.PI;
+            for (let i = 0; i < chartSamples.length; i++) {
+                const s = chartSamples[i];
+                const sd = theoreticalSigma(s.n);
+                lo = Math.min(lo, s.pi - 2 * sd);
+                hi = Math.max(hi, s.pi + 2 * sd);
+            }
+            lo = Math.min(lo, Math.PI - 0.08);
+            hi = Math.max(hi, Math.PI + 0.08);
+            const padY = (hi - lo) * 0.1;
+            lo -= padY;
+            hi += padY;
+            
+            const xOf = n => padL + (totalPoints > 0 ? Math.min(n / totalPoints, 1) : 0) * pw;
+            const yOf = v => padT + (hi - v) / (hi - lo) * ph;
+            
+            // ±1σ 理论置信带
+            if (chartSamples.length > 1) {
+                chartCtx.beginPath();
+                for (let i = 0; i < chartSamples.length; i++) {
+                    const s = chartSamples[i];
+                    const x = xOf(s.n), y = yOf(s.pi + theoreticalSigma(s.n));
+                    if (i === 0) chartCtx.moveTo(x, y); else chartCtx.lineTo(x, y);
+                }
+                for (let i = chartSamples.length - 1; i >= 0; i--) {
+                    const s = chartSamples[i];
+                    chartCtx.lineTo(xOf(s.n), yOf(s.pi - theoreticalSigma(s.n)));
+                }
+                chartCtx.closePath();
+                chartCtx.fillStyle = 'rgba(59, 130, 246, 0.18)';
+                chartCtx.fill();
+            }
+            
+            // 横向网格与纵轴刻度
+            chartCtx.font = (10 * dpr) + 'px system-ui, sans-serif';
+            chartCtx.strokeStyle = '#E5E7EB';
+            chartCtx.lineWidth = 1 * dpr;
+            chartCtx.textAlign = 'right';
+            chartCtx.textBaseline = 'middle';
+            chartCtx.fillStyle = '#9CA3AF';
+            for (let i = 0; i <= 4; i++) {
+                const v = lo + (hi - lo) * i / 4;
+                const y = yOf(v);
+                chartCtx.beginPath();
+                chartCtx.moveTo(padL, y);
+                chartCtx.lineTo(padL + pw, y);
+                chartCtx.stroke();
+                chartCtx.fillText(v.toFixed(3), padL - 6 * dpr, y);
+            }
+            
+            // π 真值基准线
+            chartCtx.strokeStyle = '#10B981';
+            chartCtx.lineWidth = 1.4 * dpr;
+            chartCtx.setLineDash([5 * dpr, 4 * dpr]);
+            chartCtx.beginPath();
+            chartCtx.moveTo(padL, yOf(Math.PI));
+            chartCtx.lineTo(padL + pw, yOf(Math.PI));
+            chartCtx.stroke();
+            chartCtx.setLineDash([]);
+            
+            // 横轴刻度（n）
+            chartCtx.textAlign = 'center';
+            chartCtx.textBaseline = 'top';
+            chartCtx.fillStyle = '#9CA3AF';
+            for (let i = 0; i <= 4; i++) {
+                const n = totalPoints * i / 4;
+                chartCtx.fillText(String(Math.round(n)), xOf(n), padT + ph + 6 * dpr);
+            }
+            chartCtx.textAlign = 'right';
+            chartCtx.fillText('n', padL + pw, padT + ph + 6 * dpr);
+            
+            // π̂ 曲线
+            if (chartSamples.length) {
+                chartCtx.strokeStyle = '#3B82F6';
+                chartCtx.lineWidth = 1.8 * dpr;
+                chartCtx.lineJoin = 'round';
+                chartCtx.beginPath();
+                for (let i = 0; i < chartSamples.length; i++) {
+                    const s = chartSamples[i];
+                    const x = xOf(s.n), y = yOf(s.pi);
+                    if (i === 0) chartCtx.moveTo(x, y); else chartCtx.lineTo(x, y);
+                }
+                chartCtx.stroke();
+            }
+            
+            // 外框
+            chartCtx.strokeStyle = '#D1D5DB';
+            chartCtx.lineWidth = 1 * dpr;
+            chartCtx.strokeRect(padL, padT, pw, ph);
+        }
+        
+        // 初始化重复实验直方图Canvas
+        function initHistogram() {
+            const w = Math.max(histCanvas.clientWidth, 280);
+            const h = Math.max(histCanvas.clientHeight, 160);
+            const dpr = window.devicePixelRatio || 1;
+            histCanvas.width = Math.round(w * dpr);
+            histCanvas.height = Math.round(h * dpr);
+            lastHistW = w;
+            lastHistH = h;
+            drawHistogram();
+        }
+        
+        // 绘制 π 估计值的分布直方图
+        function drawHistogram() {
+            const W = histCanvas.width, H = histCanvas.height;
+            const dpr = window.devicePixelRatio || 1;
+            histCtx.setTransform(1, 0, 0, 1, 0, 0);
+            histCtx.clearRect(0, 0, W, H);
+            
+            const padL = 46 * dpr, padR = 16 * dpr, padT = 12 * dpr, padB = 30 * dpr;
+            const pw = W - padL - padR, ph = H - padT - padB;
+            if (pw <= 0 || ph <= 0) return;
+            
+            // 无数据时只画空坐标系
+            if (!repeatResults.length) {
+                histCtx.strokeStyle = '#D1D5DB';
+                histCtx.lineWidth = 1 * dpr;
+                histCtx.strokeRect(padL, padT, pw, ph);
+                histCtx.fillStyle = '#9CA3AF';
+                histCtx.font = (11 * dpr) + 'px system-ui, sans-serif';
+                histCtx.textAlign = 'center';
+                histCtx.textBaseline = 'middle';
+                histCtx.fillText('点击「开始实验」以生成分布', padL + pw / 2, padT + ph / 2);
+                return;
+            }
+            
+            const K = repeatResults.length;
+            const sigma = theoreticalSigma(lastRepeatM);
+            let lo = Math.min(Math.PI - 3 * sigma, Math.min.apply(null, repeatResults));
+            let hi = Math.max(Math.PI + 3 * sigma, Math.max.apply(null, repeatResults));
+            const padX = (hi - lo) * 0.05 || 0.01;
+            lo -= padX;
+            hi += padX;
+            
+            const bins = Math.max(16, Math.min(30, Math.round(Math.sqrt(K))));
+            const counts = new Array(bins).fill(0);
+            for (let i = 0; i < K; i++) {
+                let idx = Math.floor((repeatResults[i] - lo) / (hi - lo) * bins);
+                idx = Math.max(0, Math.min(bins - 1, idx));
+                counts[idx]++;
+            }
+            const maxCount = Math.max.apply(null, counts);
+            
+            const xOf = v => padL + (v - lo) / (hi - lo) * pw;
+            const yOf = c => padT + ph - c / (maxCount || 1) * ph;
+            
+            // 横向网格与纵轴刻度（频数）
+            histCtx.font = (10 * dpr) + 'px system-ui, sans-serif';
+            histCtx.strokeStyle = '#E5E7EB';
+            histCtx.lineWidth = 1 * dpr;
+            histCtx.textAlign = 'right';
+            histCtx.textBaseline = 'middle';
+            histCtx.fillStyle = '#9CA3AF';
+            for (let i = 0; i <= 4; i++) {
+                const c = maxCount * i / 4;
+                const y = yOf(c);
+                histCtx.beginPath();
+                histCtx.moveTo(padL, y);
+                histCtx.lineTo(padL + pw, y);
+                histCtx.stroke();
+                histCtx.fillText(Math.round(c), padL - 6 * dpr, y);
+            }
+            
+            // 柱体
+            const bw = pw / bins;
+            for (let i = 0; i < bins; i++) {
+                if (!counts[i]) continue;
+                const x = padL + i * bw;
+                const y = yOf(counts[i]);
+                histCtx.fillStyle = 'rgba(59, 130, 246, 0.65)';
+                histCtx.fillRect(x + bw * 0.08, y, bw * 0.84, padT + ph - y);
+                histCtx.strokeStyle = '#3B82F6';
+                histCtx.lineWidth = 1 * dpr;
+                histCtx.strokeRect(x + bw * 0.08, y, bw * 0.84, padT + ph - y);
+            }
+            
+            // π 真值基准线
+            histCtx.strokeStyle = '#10B981';
+            histCtx.lineWidth = 1.6 * dpr;
+            histCtx.setLineDash([5 * dpr, 4 * dpr]);
+            histCtx.beginPath();
+            histCtx.moveTo(xOf(Math.PI), padT);
+            histCtx.lineTo(xOf(Math.PI), padT + ph);
+            histCtx.stroke();
+            histCtx.setLineDash([]);
+            
+            // 横轴刻度
+            histCtx.textAlign = 'center';
+            histCtx.textBaseline = 'top';
+            histCtx.fillStyle = '#9CA3AF';
+            for (let i = 0; i <= 4; i++) {
+                const v = lo + (hi - lo) * i / 4;
+                histCtx.fillText(v.toFixed(3), xOf(v), padT + ph + 6 * dpr);
+            }
+            histCtx.fillText('π̂', padL + pw, padT + ph + 16 * dpr);
+            
+            // 外框
+            histCtx.strokeStyle = '#D1D5DB';
+            histCtx.lineWidth = 1 * dpr;
+            histCtx.strokeRect(padL, padT, pw, ph);
+        }
+        
+        // 读取并夹逼整数输入
+        function clampInt(value, min, max, fallback) {
+            const v = parseInt(value, 10);
+            if (isNaN(v)) return fallback;
+            return Math.min(Math.max(v, min), max);
+        }
+        
+        // 重复独立实验：每组 M 个谷粒，重复 K 组
+        function runRepeatExperiment() {
+            const M = clampInt(repeatMInput.value, 100, 200000, 5000);
+            const K = clampInt(repeatKInput.value, 5, 500, 50);
+            // 限制总计算量，避免 M×K 过大导致页面卡死
+            let M2 = M, K2 = K;
+            const MAX_WORK = 2e7;
+            if (M2 * K2 > MAX_WORK) {
+                K2 = Math.max(5, Math.floor(MAX_WORK / M2));
+                showToast(`计算量过大，重复组数已自动调整为 K=${K2}`);
+            }
+            repeatMInput.value = M2;
+            repeatKInput.value = K2;
+            
+            lastRepeatM = M2;
+            const gen = createRng(false);
+            repeatResults = [];
+            for (let k = 0; k < K2; k++) {
+                let m = 0;
+                for (let i = 0; i < M2; i++) {
+                    const x = gen() * 2 - 1;
+                    const y = gen() * 2 - 1;
+                    if (x * x + y * y <= 1) m++;
+                }
+                repeatResults.push(4 * m / M2);
+            }
+            
+            // 统计量
+            const mean = repeatResults.reduce((a, b) => a + b, 0) / K2;
+            const variance = K2 > 1
+                ? repeatResults.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (K2 - 1)
+                : 0;
+            const std = Math.sqrt(variance);
+            const sigma = theoreticalSigma(M2);
+            const inOne = repeatResults.filter(v => Math.abs(v - Math.PI) <= sigma).length / K2;
+            const lo = Math.min.apply(null, repeatResults);
+            const hi = Math.max.apply(null, repeatResults);
+            
+            repMean.textContent = mean.toFixed(5);
+            repStd.textContent = std.toFixed(5);
+            repSigma.textContent = '±' + sigma.toFixed(5);
+            repCov68.textContent = (inOne * 100).toFixed(0) + '%';
+            repRange.textContent = (hi - lo).toFixed(4);
+            
+            drawHistogram();
+            showToast(`重复实验完成：K=${K2}，M=${M2}，均值 ${mean.toFixed(4)}，标准差 ${std.toFixed(4)}`);
+        }
+        
+        // 绘制正方形和内切圆
+        function drawSquareAndCircle() {
+            // 保存当前上下文状态
+            ctx.save();
+            
+            // 将坐标原点移至中心
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            
+            // 计算缩放比例（将[-1,1]范围映射到Canvas尺寸）
+            const scale = Math.min(canvas.width, canvas.height) / 2 * 0.95; // 留5%的边距
+            
+            // 缩放坐标系
+            ctx.scale(scale, scale);
+            
+            // 深色观测台背景与圆形淡蓝底色
+            ctx.fillStyle = '#101b31';
+            ctx.fillRect(-1, -1, 2, 2);
+            ctx.beginPath();
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(54, 133, 220, .10)';
+            ctx.fill();
+
+            // 绘制正方形
+            ctx.strokeStyle = '#7186a6';
+            ctx.lineWidth = 1 / scale; // 线宽在缩放后保持一致
+            ctx.strokeRect(-1, -1, 2, 2);
+            
+            // 绘制圆
+            ctx.beginPath();
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.strokeStyle = '#9bcaff';
+            ctx.stroke();
+            
+            // 恢复上下文状态
+            ctx.restore();
+        }
+        
+        // 生成随机点
+        function generateRandomPoint() {
+            // 在[-1, 1]范围内生成随机坐标（随机数由 rng 提供，可切换 LCG 以便复现）
+            const x = rng() * 2 - 1;
+            const y = rng() * 2 - 1;
+            
+            // 判断是否在圆内
+            const inCircle = x * x + y * y <= 1;
+            
+            return { x, y, inCircle };
+        }
+        
+        // 谷粒半径（CSS像素）：随总点数增大而减小，避免大量点时糊成一片
+        function getDotRadiusPx() {
+            const n = Math.max(totalPoints, 10);
+            return Math.max(0.6, Math.min(2.6, 3.2 - 0.62 * Math.log10(n)));
+        }
+        
+        // 绘制点
+        function drawPoints(pointsToDraw) {
+            if (!pointsToDraw.length) return;
+            
+            // 保存当前上下文状态
+            ctx.save();
+            
+            // 将坐标原点移至中心
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            
+            // 计算缩放比例
+            const scale = Math.min(canvas.width, canvas.height) / 2 * 0.95;
+            
+            // 缩放坐标系
+            ctx.scale(scale, scale);
+            
+            // 点的大小：由总点数自适应，并换算到当前缩放坐标系
+            const dpr = window.devicePixelRatio || 1;
+            const r = getDotRadiusPx() * dpr / scale;
+            
+            if (totalPoints > FAST_DRAW_THRESHOLD) {
+                // 大量点：用 fillRect 按颜色分组绘制，比逐点 arc() 快一个数量级
+                const side = 2 * r;
+                ctx.fillStyle = '#ff716b';
+                for (let i = 0; i < pointsToDraw.length; i++) {
+                    const p = pointsToDraw[i];
+                    if (!p.inCircle) ctx.fillRect(p.x - r, p.y - r, side, side);
+                }
+                ctx.fillStyle = '#43b9ff';
+                for (let i = 0; i < pointsToDraw.length; i++) {
+                    const p = pointsToDraw[i];
+                    if (p.inCircle) ctx.fillRect(p.x - r, p.y - r, side, side);
+                }
+            } else {
+                // 少量点：圆形谷粒，观感更好
+                for (let i = 0; i < pointsToDraw.length; i++) {
+                    const p = pointsToDraw[i];
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+                    ctx.fillStyle = p.inCircle ? '#43b9ff' : '#ff716b';
+                    ctx.fill();
+                }
+            }
+            
+            // 恢复上下文状态
+            ctx.restore();
+        }
+        
+        // 批量生成和绘制点
+        function processBatch() {
+            if (!isRunning) return;
+            
+            const step = computeBatchSize();
+            const remaining = totalPoints - currentN;
+            const count = Math.min(step, remaining);
+            const batch = [];
+            const interval = Math.max(1, Math.ceil(totalPoints / CHART_MAX_SAMPLES));
+            
+            // 生成一批点（点数按总次数与速度自适应；瞬时模式下一次性生成剩余全部）
+            for (let i = 0; i < count; i++) {
+                const point = generateRandomPoint();
+                batch.push(point);
+                points.push(point);
+                
+                currentN++;
+                if (point.inCircle) currentM++;
+                
+                // 为收敛曲线采样，最多 CHART_MAX_SAMPLES 个点
+                if (currentN % interval === 0) {
+                    chartSamples.push({ n: currentN, pi: 4 * currentM / currentN });
+                }
+            }
+
+            // 终点补采样，保证收敛曲线与导出数据都包含最终 n
+            if (currentN >= totalPoints && (!chartSamples.length || chartSamples[chartSamples.length - 1].n !== currentN)) {
+                chartSamples.push({ n: currentN, pi: 4 * currentM / currentN });
+            }
+            
+            // 绘制这批点
+            drawPoints(batch);
+            
+            // 更新显示与收敛曲线
+            updateDisplay();
+            drawChart();
+            
+            // 检查是否完成
+            if (currentN >= totalPoints) {
+                finishSimulation();
+                return;
+            }
+            
+            // 继续处理下一批
+            animationId = setTimeout(processBatch, batchDelay);
+        }
+        
+        // 更新进度条与百分比提示
+        function updateProgress() {
+            const pct = totalPoints > 0 ? Math.min(currentN / totalPoints * 100, 100) : 0;
+            progressBar.style.width = `${pct}%`;
+            progressPct.textContent = `${Math.round(pct)}%`;
+            progressWrap.setAttribute('aria-valuenow', String(Math.round(pct)));
+        }
+        
+        // 更新显示数据
+        function updateDisplay() {
+            currentNElement.textContent = currentN;
+            currentMElement.textContent = currentM;
+            
+            // 实时无偏估计：π ≈ 4m / n（n 为当前已抛洒谷粒数），保留4位小数
+            const pi = currentN > 0 ? (4 * currentM / currentN) : 0;
+            currentPiElement.textContent = currentN ? pi.toFixed(4) : '—';
+            
+            // 教材步骤5公式：π = 4m / M（M 为总执行次数）
+            // 模拟结束时 n = M，两式结果一致；过程中 n < M，该式会系统性偏小
+            const piByM = totalPoints > 0 ? (4 * currentM / totalPoints) : 0;
+            currentPiByMElement.textContent = currentN ? piByM.toFixed(4) : '—';
+            
+            // 误差与精度指标
+            if (currentN > 0) {
+                const absErr = Math.abs(pi - Math.PI);
+                const sigma = theoreticalSigma(currentN);
+                absErrorElement.textContent = absErr.toFixed(4);
+                relErrorElement.textContent = (absErr / Math.PI * 100).toFixed(2) + '%';
+                stdErrorElement.textContent = '±' + sigma.toFixed(4);
+                ci95Element.textContent = `[${(pi - 1.96 * sigma).toFixed(4)}, ${(pi + 1.96 * sigma).toFixed(4)}]`;
+            } else {
+                absErrorElement.textContent = '—';
+                relErrorElement.textContent = '—';
+                stdErrorElement.textContent = '—';
+                ci95Element.textContent = '—';
+            }
+            
+            updateProgress();
+            updatePrecisionGuide();
+        }
+        
+        // 开始或暂停模拟
+        function toggleSimulation() {
+            if (isRunning) {
+                // 暂停模拟
+                isRunning = false;
+                if (animationId) {
+                    clearTimeout(animationId);
+                    animationId = null;
+                }
+                startBtn.innerHTML = '<i class="fa fa-play mr-2" aria-hidden="true"></i> 继续';
+                startBtn.dataset.state = 'paused';
+                startBtn.classList.remove('bg-primary', 'hover:bg-primary/90');
+                startBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                progressTip.classList.add('hidden');
+            } else {
+                // 已跑满时先复位，否则 processBatch 会因 n≥M 立即结束，按钮表现为"点了没反应"
+                if (currentN >= totalPoints) {
+                    resetSimulation();
+                }
+                
+                // 从头开始时按面板设置重建随机数发生器，保证同种子可复现
+                if (currentN === 0) {
+                    rng = createRng();
+                }
+                
+                // 开始或继续模拟
+                isRunning = true;
+                startBtn.innerHTML = '<i class="fa fa-pause mr-2" aria-hidden="true"></i> 暂停';
+                startBtn.dataset.state = 'running';
+                startBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                startBtn.classList.add('bg-primary', 'hover:bg-primary/90');
+                
+                // 显示进度提示（角落标签 + 底部细进度条，不遮挡画布）
+                progressWrap.classList.remove('hidden');
+                progressTip.classList.remove('hidden');
+                
+                processBatch();
+            }
+        }
+        
+        // 重置模拟
+        function resetSimulation() {
+            // 停止当前模拟
+            isRunning = false;
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            
+            // 重置参数
+            currentN = 0;
+            currentM = 0;
+            points = [];
+            chartSamples = [];
+            
+            // 重置按钮状态
+            startBtn.innerHTML = '<i class="fa fa-play mr-2" aria-hidden="true"></i> 开始';
+            startBtn.dataset.state = 'ready';
+            startBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+            startBtn.classList.add('bg-primary', 'hover:bg-primary/90');
+            
+            // 重新初始化画布
+            initCanvas();
+            
+            // 更新显示并清空收敛曲线
+            updateDisplay();
+            drawChart();
+            
+            // 隐藏进度提示
+            progressTip.classList.add('hidden');
+            progressWrap.classList.add('hidden');
+        }
+        
+        // 完成模拟
+        function finishSimulation() {
+            isRunning = false;
+            startBtn.innerHTML = '<i class="fa fa-play mr-2" aria-hidden="true"></i> 重新开始';
+            startBtn.dataset.state = 'done';
+            startBtn.classList.remove('bg-primary', 'hover:bg-primary/90');
+            startBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+            progressTip.classList.add('hidden');
+
+            // 播报最终结果，供屏幕阅读器与普通用户同时获知
+            const finalPi = currentN > 0 ? 4 * currentM / currentN : 0;
+            const finalErr = Math.abs(finalPi - Math.PI);
+            const finalSigma = theoreticalSigma(currentN);
+            showToast('模拟完成：n=' + currentN + '，π ≈ ' + finalPi.toFixed(4) + '，绝对误差 ' + finalErr.toFixed(4) + '（理论 σ ±' + finalSigma.toFixed(4) + '）');
+        }
+        
+        // 应用总点数设置
+        function applyTotalPoints() {
+            let value = parseInt(totalPointsInput.value, 10);
+            
+            // 验证输入值
+            if (isNaN(value) || value < 10) {
+                value = 10;
+            } else if (value > 100000) {
+                value = 100000;
+            }
+            
+            // 更新输入框和总点数
+            totalPointsInput.value = value;
+            totalPoints = value;
+            
+            // 应用次数总会开始一轮干净的新实验，避免 n 大于新 M 时保留旧样本
+            resetSimulation();
+            showToast(`本轮总次数已设为 ${value.toLocaleString()}，实验已重置`);
+        }
+
+        function applyPrecisionTarget() {
+            const requested = samplesForMargin(Number(precisionGoal.value) || 0.02);
+            const applied = Math.min(100000, Math.max(10, requested));
+            totalPointsInput.value = applied;
+            applyTotalPoints();
+            if (requested > 100000) {
+                showToast(`该精度理论约需 ${requested.toLocaleString()} 次；已按本页上限设置为 100,000 次`);
+            }
+        }
+        
+        // ===== 数据导出 =====
+        function exportPoints() {
+            if (!points.length) { showToast('尚无谷粒数据可导出，请先开始模拟'); return; }
+            const rows = [
+                '# Monte Carlo π estimate',
+                `# M=${totalPoints}`,
+                `# n=${currentN}`,
+                `# m=${currentM}`,
+                `# rng=${activeRngInfo.type}`,
+                `# seed=${activeRngInfo.seed === null ? 'non-reproducible' : activeRngInfo.seed}`,
+                ...(activeRngInfo.type === 'LCG' ? [`# preset=${activeRngInfo.preset}`, `# a=${activeRngInfo.a}`, `# c=${activeRngInfo.c}`, `# modulus=${activeRngInfo.m}`] : []),
+                'index,x,y,inCircle'
+            ];
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                rows.push(`${i + 1},${p.x.toFixed(6)},${p.y.toFixed(6)},${p.inCircle ? 1 : 0}`);
+            }
+            downloadFile(`montecarlo-points-M${totalPoints}.csv`, rows.join('\n'), 'text/csv');
+            showToast(`已导出 ${points.length} 个谷粒的坐标`);
+        }
+        
+        function exportConvergence() {
+            if (!chartSamples.length) { showToast('尚无收敛数据可导出，请先开始模拟'); return; }
+            const rows = ['n,pi_hat,sigma_theoretical,abs_error'];
+            for (let i = 0; i < chartSamples.length; i++) {
+                const s = chartSamples[i];
+                rows.push(`${s.n},${s.pi.toFixed(6)},${theoreticalSigma(s.n).toFixed(6)},${Math.abs(s.pi - Math.PI).toFixed(6)}`);
+            }
+            downloadFile('montecarlo-convergence.csv', rows.join('\n'), 'text/csv');
+            showToast(`已导出 ${chartSamples.length} 个收敛采样点`);
+        }
+        
+        function exportScatterPng() {
+            if (!points.length) { showToast('画布为空，请先开始模拟'); return; }
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png');
+            a.download = `montecarlo-scatter-M${totalPoints}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            showToast('已保存散点图 PNG');
+        }
+        
+        function exportRepeat() {
+            if (!repeatResults.length) { showToast('请先运行重复实验'); return; }
+            const rows = ['k,pi_hat'];
+            for (let i = 0; i < repeatResults.length; i++) {
+                rows.push(`${i + 1},${repeatResults[i].toFixed(6)}`);
+            }
+            downloadFile('montecarlo-repeat.csv', rows.join('\n'), 'text/csv');
+            showToast(`已导出 ${repeatResults.length} 组重复实验结果`);
+        }
+        
+        // ===== LCG 面板 =====
+        const LCG_PRESETS = {
+            minstd: { a: 16807, c: 0, m: 2147483647, seed: 1 },
+            randu: { a: 65539, c: 0, m: 2147483648, seed: 1 }
+        };
+        
+        function applyLcgPreset() {
+            const preset = LCG_PRESETS[lcgPreset.value];
+            if (preset) {
+                lcgA.value = preset.a;
+                lcgC.value = preset.c;
+                lcgM.value = preset.m;
+                lcgSeed.value = preset.seed;
+            }
+            randuHint.classList.toggle('hidden', lcgPreset.value !== 'randu');
+        }
+        
+        function syncRngPanel() {
+            lcgPanel.classList.toggle('hidden', rngSelect.value !== 'lcg');
+        }
+        
+        // 事件监听
+        startBtn.addEventListener('click', toggleSimulation);
+        resetBtn.addEventListener('click', resetSimulation);
+        applyTotalBtn.addEventListener('click', applyTotalPoints);
+        applyPrecisionBtn.addEventListener('click', applyPrecisionTarget);
+        precisionGoal.addEventListener('change', updatePrecisionGuide);
+        
+        exportPointsBtn.addEventListener('click', exportPoints);
+        exportConvBtn.addEventListener('click', exportConvergence);
+        exportPngBtn.addEventListener('click', exportScatterPng);
+        exportRepeatBtn.addEventListener('click', exportRepeat);
+        repeatBtn.addEventListener('click', runRepeatExperiment);
+        
+        rngSelect.addEventListener('change', syncRngPanel);
+        lcgPreset.addEventListener('change', applyLcgPreset);
+        
+        // 回车键应用总点数设置
+        totalPointsInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                applyTotalPoints();
+            }
+        });
+        
+        // 切换教材公式 π=4m/M 的显示
+        piFormulaToggle.addEventListener('change', () => {
+            piByMRow.classList.toggle('hidden', !piFormulaToggle.checked);
+        });
+        
+        // 键盘快捷键：空格 = 开始/暂停，R = 重置（在输入控件内不拦截）
+        document.addEventListener('keydown', (e) => {
+            const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
+            if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                toggleSimulation();
+            } else if (e.key === 'r' || e.key === 'R') {
+                resetSimulation();
+            }
+        });
+        
+        // 容器尺寸或屏幕缩放比变化时，重设画布并重绘已有点（无需暂停模拟）
+        function handleContainerResize() {
+            const container = canvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            const size = Math.max(Math.min(container.clientWidth, container.clientHeight), MIN_CANVAS_SIZE);
+            
+            // 尺寸与像素比均未变化时直接返回，避免 ResizeObserver 自我触发造成的死循环
+            if (Math.abs(size - lastCanvasSize) < 1 && dpr === lastDpr) return;
+            
+            redrawAll();
+        }
+        
+        // 收敛曲线画布尺寸变化时重设缓冲区并重绘
+        function handleChartResize() {
+            const w = Math.max(chartCanvas.clientWidth, 280);
+            const h = Math.max(chartCanvas.clientHeight, 160);
+            if (Math.abs(w - lastChartW) < 1 && Math.abs(h - lastChartH) < 1) return;
+            initChart();
+        }
+        
+        // 直方图画布尺寸变化时重设缓冲区并重绘
+        function handleHistResize() {
+            const w = Math.max(histCanvas.clientWidth, 280);
+            const h = Math.max(histCanvas.clientHeight, 160);
+            if (Math.abs(w - lastHistW) < 1 && Math.abs(h - lastHistH) < 1) return;
+            initHistogram();
+        }
+        
+        function handleResize() {
+            handleContainerResize();
+            handleChartResize();
+            handleHistResize();
+        }
+        
+        // 优先用 ResizeObserver 监听容器；window.resize 作为老浏览器与跨屏缩放的兜底
+        if (typeof ResizeObserver !== 'undefined') {
+            const observer = new ResizeObserver(handleResize);
+            observer.observe(canvas.parentElement);
+            observer.observe(chartCanvas.parentElement);
+            observer.observe(histCanvas.parentElement);
+        }
+        window.addEventListener('resize', handleResize);
+        
+        // 初始化
+        window.addEventListener('load', () => {
+            // 尊重系统「减少动态效果」偏好：默认改为瞬时完成
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                speedSelect.value = 'instant';
+            }
+            syncRngPanel();
+            applyLcgPreset();
+            initCanvas();
+            initChart();
+            initHistogram();
+            updateDisplay();
+        });
+    </script>
+</body>
+</html>

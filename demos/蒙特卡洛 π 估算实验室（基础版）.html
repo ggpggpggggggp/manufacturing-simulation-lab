@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>π · 谷粒蒙特卡洛实验室</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: { ink:'#10213f', sky:'#2563eb', coral:'#f05252' }, boxShadow: { glow:'0 24px 70px rgba(32, 76, 150, .16)' } } } };
+  </script>
+  <style>
+    body { background: #f5f8fc; }
+    .grid-bg { background-image: linear-gradient(rgba(37,99,235,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,.045) 1px, transparent 1px); background-size: 28px 28px; }
+    input[type=number]::-webkit-inner-spin-button { opacity: .55; }
+    .pulse-dot { animation: pulse 1.7s ease-in-out infinite; }
+    @keyframes pulse { 50% { transform: scale(1.35); opacity: .55; } }
+  </style>
+</head>
+<body class="min-h-screen text-ink antialiased">
+  <main class="grid-bg min-h-screen px-4 py-7 sm:px-8 lg:px-12">
+    <div class="mx-auto max-w-6xl">
+      <header class="mb-7 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <div>
+          <div class="mb-2 flex items-center gap-2 text-xs font-bold tracking-[.22em] text-blue-600 uppercase"><span class="h-2 w-2 rounded-full bg-blue-500 pulse-dot"></span> Interactive probability lab</div>
+          <h1 class="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">随机谷粒，逼近 <span class="text-blue-600">π</span></h1>
+          <p class="mt-2 text-sm text-slate-500">在边长为 2 的正方形内抛洒谷粒，以面积比估算圆周率。</p>
+        </div>
+        <div class="rounded-2xl border border-blue-100 bg-white/75 px-4 py-3 text-right shadow-sm backdrop-blur">
+          <p class="text-xs font-medium text-slate-400">真实值 π</p>
+          <p class="font-mono text-lg font-bold text-slate-700">3.141592653589793</p>
+        </div>
+      </header>
+
+      <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-glow">
+          <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
+            <div><h2 class="font-bold text-slate-800">抛洒区域</h2><p class="text-xs text-slate-400">正方形 [-1, 1] × [-1, 1] · 内切圆 r = 1</p></div>
+            <div id="status" class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500">准备就绪</div>
+          </div>
+          <div class="relative aspect-square w-full bg-[#fbfdff]">
+            <canvas id="canvas" class="absolute inset-0 h-full w-full" aria-label="蒙特卡洛模拟画布"></canvas>
+            <div class="pointer-events-none absolute bottom-4 left-4 rounded-xl bg-white/85 px-3 py-2 text-xs shadow-sm backdrop-blur">
+              <span class="mr-3 inline-flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-blue-500"></i>圆内</span>
+              <span class="inline-flex items-center gap-1.5"><i class="h-2 w-2 rounded-full bg-red-500"></i>圆外</span>
+            </div>
+          </div>
+        </div>
+
+        <aside class="space-y-5">
+          <div class="rounded-3xl bg-slate-900 p-6 text-white shadow-xl shadow-slate-300/50">
+            <p class="text-xs font-bold tracking-[.18em] text-blue-300 uppercase">当前估算值</p>
+            <div class="mt-2 flex items-baseline gap-2"><span class="text-2xl text-blue-300">π ≈</span><output id="piValue" class="font-mono text-4xl font-bold tracking-tight">—</output></div>
+            <div class="mt-5 h-1.5 overflow-hidden rounded-full bg-slate-700"><div id="progress" class="h-full w-0 rounded-full bg-gradient-to-r from-blue-400 to-cyan-300 transition-[width] duration-150"></div></div>
+            <p id="progressText" class="mt-2 text-right text-xs text-slate-400">0% 完成</p>
+          </div>
+
+          <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <label for="total" class="mb-2 block text-sm font-bold text-slate-700">总执行次数 M</label>
+            <div class="relative"><input id="total" type="number" min="10" max="100000" value="1000" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pr-16 font-mono text-lg font-bold outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /><span class="absolute right-4 top-3.5 text-xs font-bold text-slate-400">10–100K</span></div>
+            <p id="inputHint" class="mt-2 text-xs text-slate-400">开始前可修改次数</p>
+            <div class="mt-5 grid grid-cols-2 gap-3">
+              <button id="start" class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-700 active:scale-[.98]">开始模拟</button>
+              <button id="reset" class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 active:scale-[.98]">重置</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p class="text-xs font-bold text-blue-500">已抛洒 n</p><p id="nValue" class="mt-1 font-mono text-2xl font-black text-blue-800">0</p></div>
+            <div class="rounded-2xl border border-red-100 bg-red-50 p-4"><p class="text-xs font-bold text-red-500">圆内 m</p><p id="mValue" class="mt-1 font-mono text-2xl font-black text-red-800">0</p></div>
+          </div>
+          <div class="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800"><b>原理：</b>圆面积 / 正方形面积 = π/4，因此 π ≈ 4m/n。</div>
+        </aside>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const canvas = document.querySelector('#canvas'), ctx = canvas.getContext('2d');
+    const totalInput = document.querySelector('#total'), startBtn = document.querySelector('#start'), resetBtn = document.querySelector('#reset');
+    const nEl = document.querySelector('#nValue'), mEl = document.querySelector('#mValue'), piEl = document.querySelector('#piValue');
+    const progress = document.querySelector('#progress'), progressText = document.querySelector('#progressText'), status = document.querySelector('#status'), hint = document.querySelector('#inputHint');
+    let n = 0, m = 0, target = 1000, running = false, frame = null, points = [];
+    let size = 0, dpr = Math.min(devicePixelRatio || 1, 2);
+
+    function setupCanvas() { const r = canvas.getBoundingClientRect(); size = r.width; canvas.width = Math.round(size*dpr); canvas.height = Math.round(size*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); draw(); }
+    function xy(x,y) { return [size/2 + x*size*.43, size/2 - y*size*.43]; }
+    function draw() {
+      ctx.clearRect(0,0,size,size);
+      const pad=size*.07, side=size*.86, center=size/2, radius=side/2;
+      ctx.fillStyle='#f8fbff'; ctx.fillRect(pad,pad,side,side);
+      ctx.beginPath(); ctx.arc(center,center,radius,0,Math.PI*2); ctx.fillStyle='rgba(37,99,235,.055)'; ctx.fill();
+      for (const p of points) { const [px,py]=xy(p.x,p.y); ctx.beginPath(); ctx.arc(px,py, p.r, 0, Math.PI*2); ctx.fillStyle=p.inside ? 'rgba(37,99,235,.82)' : 'rgba(240,82,82,.78)'; ctx.fill(); }
+      ctx.lineWidth=2; ctx.strokeStyle='#2563eb'; ctx.beginPath(); ctx.arc(center,center,radius,0,Math.PI*2); ctx.stroke();
+      ctx.lineWidth=2; ctx.strokeStyle='#94a3b8'; ctx.strokeRect(pad,pad,side,side);
+      ctx.fillStyle='#64748b'; ctx.font='12px ui-monospace, monospace'; ctx.fillText('−1',pad-4,size-10); ctx.fillText('1',size-pad-5,size-10);
+    }
+    function renderStats() { nEl.textContent=n.toLocaleString(); mEl.textContent=m.toLocaleString(); piEl.textContent=n ? (4*m/n).toFixed(6) : '—'; const pct=target ? n/target*100 : 0; progress.style.width=pct+'%'; progressText.textContent=pct.toFixed(0)+'% 完成'; }
+    function addBatch() {
+      if (!running) return;
+      // 根据目标规模自适应批量，既可看见动画也能快速完成大规模实验
+      const batch = target <= 3000 ? 18 : target <= 20000 ? 220 : 1100;
+      const count = Math.min(batch, target-n);
+      for(let i=0;i<count;i++) { const x=Math.random()*2-1, y=Math.random()*2-1, inside=x*x+y*y<=1; n++; if(inside)m++; points.push({x,y,inside,r: target>20000?1.2:1.8}); }
+      // 留存有限点数，防止超大样本时重绘成本持续升高
+      if(points.length>16000) points.splice(0, points.length-16000);
+      draw(); renderStats();
+      if(n>=target) { running=false; frame=null; startBtn.textContent='再次运行'; status.textContent='模拟完成'; status.className='rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700'; hint.textContent='实验完成，可调整次数后再次运行'; totalInput.disabled=false; return; }
+      frame=requestAnimationFrame(addBatch);
+    }
+    function setRunningUI() { startBtn.textContent='暂停模拟'; status.textContent='正在抛洒'; status.className='rounded-full bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-700'; hint.textContent='模拟进行中；可随时暂停'; }
+    function startOrPause() {
+      if(running) { running=false; cancelAnimationFrame(frame); frame=null; startBtn.textContent='继续模拟'; status.textContent='已暂停'; status.className='rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700'; return; }
+      let val=Math.floor(Number(totalInput.value)); if(!Number.isFinite(val)) val=1000; val=Math.max(10,Math.min(100000,val)); totalInput.value=val;
+      if(n>=target || n===0) { if(n>=target) { n=0;m=0;points=[]; } target=val; }
+      running=true; setRunningUI(); frame=requestAnimationFrame(addBatch);
+    }
+    function reset() { running=false; cancelAnimationFrame(frame); frame=null; n=0;m=0;points=[];target=Math.max(10,Math.min(100000,Math.floor(Number(totalInput.value))||1000)); totalInput.value=target; renderStats(); draw(); startBtn.textContent='开始模拟'; status.textContent='准备就绪'; status.className='rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500'; hint.textContent='开始前可修改次数'; }
+    startBtn.addEventListener('click',startOrPause); resetBtn.addEventListener('click',reset); totalInput.addEventListener('change',()=>{ if(!running) reset(); });
+    new ResizeObserver(setupCanvas).observe(canvas); setupCanvas(); renderStats();
+  </script>
+</body>
+</html>

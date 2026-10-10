@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="制造系统建模与仿真课程交互演示和配套材料">
+  <title>制造系统建模与仿真 · 交互实验室</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f6f8fb; color: #183047; }
+    * { box-sizing: border-box; }
+    body { margin: 0; line-height: 1.65; }
+    a { color: inherit; }
+    a:focus-visible { outline: 3px solid #137f93; outline-offset: 4px; border-radius: 4px; }
+    .wrap { width: min(1120px, calc(100% - 40px)); margin: auto; }
+    header { background: linear-gradient(125deg, #0f3044, #10596a 72%, #16818b); color: white; padding: 64px 0 72px; }
+    .eyebrow { margin: 0 0 12px; color: #a7e3e4; font-size: .85rem; font-weight: 700; letter-spacing: .13em; }
+    h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.7rem); line-height: 1.2; letter-spacing: -.04em; }
+    header p:last-child { max-width: 700px; margin: 18px 0 0; color: #d7eeee; font-size: 1.05rem; }
+    main { padding: 42px 0 70px; }
+    h2 { margin: 0 0 18px; font-size: 1.45rem; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    article { display: flex; flex-direction: column; min-height: 255px; padding: 26px; border: 1px solid #dce6ed; border-radius: 18px; background: white; box-shadow: 0 12px 35px rgba(18, 54, 76, .05); }
+    article h3 { margin: 8px 0 8px; font-size: 1.3rem; line-height: 1.35; }
+    article p { margin: 0; color: #506576; }
+    .tag { color: #087989; font-size: .78rem; font-weight: 800; letter-spacing: .1em; }
+    .links { display: flex; flex-wrap: wrap; gap: 9px; margin-top: auto; padding-top: 22px; }
+    .links a, .docs a { display: inline-block; border-radius: 9px; padding: 8px 13px; background: #e5f5f6; color: #0b6470; font-weight: 700; text-decoration: none; }
+    .links a:hover, .docs a:hover { background: #ccecef; }
+    .docs { margin-top: 42px; padding: 26px; border: 1px solid #dce6ed; border-radius: 18px; background: white; }
+    .docs h2 { margin-bottom: 8px; }
+    .docs p { margin: 0 0 16px; color: #506576; }
+    .docs nav { display: flex; flex-wrap: wrap; gap: 10px; }
+    footer { padding: 0 0 36px; color: #5e7382; font-size: .9rem; }
+    footer a { color: #0b6470; }
+    @media (max-width: 700px) { header { padding: 48px 0 55px; } .grid { grid-template-columns: 1fr; } article { min-height: 220px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">MANUFACTURING SIMULATION LAB</p>
+      <h1>制造系统建模与仿真<br>交互实验室</h1>
+      <p>从随机数与统计指标到排队系统，通过可操作的演示观察模型、数据和仿真过程。</p>
+    </div>
+  </header>
+  <main class="wrap">
+    <section aria-labelledby="demos-title">
+      <h2 id="demos-title">交互演示</h2>
+      <div class="grid">
+        <article>
+          <span class="tag">01 · MONTE CARLO</span>
+          <h3>蒙特卡洛方法估算 π</h3>
+          <p>在正方形中随机取点，观察样本数与圆周率估计结果的关系。</p>
+          <div class="links"><a href="demos/00. 蒙特卡洛 π 估算实验室（升级版）.html">打开升级版</a><a href="demos/蒙特卡洛 π 估算实验室（基础版）.html">打开基础版</a></div>
+        </article>
+        <article>
+          <span class="tag">02 · RANDOM NUMBERS</span>
+          <h3>线性同余法 LCG</h3>
+          <p>调整参数、生成伪随机数序列，并观察周期与分布特征。</p>
+          <div class="links"><a href="demos/06. 线性同余法（LCG：Linear Congruential Generator）V3.html">打开演示</a><a href="assets/lcg-v3-preview.png">查看预览图</a></div>
+        </article>
+        <article>
+          <span class="tag">03 · STATISTICS</span>
+          <h3>离散型随机变量统计指标</h3>
+          <p>通过射击成绩的例子理解期望、方差等统计指标。</p>
+          <div class="links"><a href="demos/离散型随机变量统计指标教学演示.html">打开演示</a></div>
+        </article>
+        <article>
+          <span class="tag">04 · QUEUEING SYSTEM</span>
+          <h3>单服务台排队系统</h3>
+          <p>沿事件表推进仿真，查看服务台和队列状态及统计结果。</p>
+          <div class="links"><a href="demos/例3.3 单服务台排队系统仿真演示 V3.html">打开演示</a><a href="assets/queue-v3-preview.png">查看预览图</a></div>
+        </article>
+      </div>
+    </section>
+    <section class="docs" aria-labelledby="docs-title">
+      <h2 id="docs-title">配套材料</h2>
+      <p>Markdown 文件在 GitHub 上可直接阅读；下载仓库后也可使用任意 Markdown 阅读器打开。</p>
+      <nav aria-label="配套文档"><a href="https://github.com/ggpggpggggggp/manufacturing-simulation-lab/blob/main/docs/讨论题23题参考答案.md">讨论题 23 题参考答案</a><a href="https://github.com/ggpggpggggggp/manufacturing-simulation-lab/blob/main/docs/例3.3-教材模式实验报告示例.md">例 3.3 实验报告示例</a></nav>
+    </section>
+  </main>
+  <footer class="wrap">课程学习与教学展示 · <a href="https://github.com/ggpggpggggggp/manufacturing-simulation-lab">GitHub 仓库</a></footer>
+</body>
+</html>
